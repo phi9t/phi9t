@@ -1,0 +1,50 @@
+name: Publish RSI frontier site
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "deploy/site.part.*"
+      - ".github/workflows/publish-rsi-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rsi-site-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Reconstruct and validate static site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/rsi-site
+          mkdir -p /tmp/rsi-site
+          cat deploy/site.part.* | base64 --decode > /tmp/rsi-site.tar.gz
+          echo "4e7cb783ec5443ed90653beff225d329b961840fd1c4f95b2d099e9501faf434  /tmp/rsi-site.tar.gz" | sha256sum --check --strict
+          tar -xzf /tmp/rsi-site.tar.gz -C /tmp/rsi-site
+          test -s /tmp/rsi-site/index.html
+          test -s /tmp/rsi-site/styles.css
+          test -s /tmp/rsi-site/app.js
+          grep -q "Recursive Self-Improvement" /tmp/rsi-site/index.html
+
+      - name: Publish to gh-pages branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan rsi-site-publish
+          git rm -rf .
+          cp -a /tmp/rsi-site/. .
+          git add -A
+          git commit -m "Publish RSI research frontier microsite"
+          git push --force origin HEAD:gh-pages
