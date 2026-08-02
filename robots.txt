@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://phi9t.github.io/phi9t/sitemap.xml
