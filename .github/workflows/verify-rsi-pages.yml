@@ -1,0 +1,72 @@
+name: Verify RSI GitHub Pages publication
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/verify-rsi-pages.yml"
+      - "deploy/verify-trigger.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Poll the public GitHub Pages endpoint
+        id: probe
+        shell: bash
+        run: |
+          set -u
+          url="https://phi9t.github.io/phi9t/"
+          mkdir -p deploy
+          ok=0
+          code=000
+          for attempt in $(seq 1 30); do
+            code=$(curl --location --silent --show-error \
+              --output /tmp/rsi-live.html \
+              --write-out '%{http_code}' \
+              --max-time 30 "$url" || true)
+            if [[ "$code" == "200" ]] && grep -q "Recursive Self-Improvement" /tmp/rsi-live.html; then
+              ok=1
+              break
+            fi
+            sleep 20
+          done
+
+          {
+            echo "url=$url"
+            echo "verified_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "http_status=$code"
+            echo "title_marker_found=$ok"
+            echo "gh_pages_commit=$(git ls-remote origin refs/heads/gh-pages | cut -f1)"
+          } > deploy/live-status.txt
+
+          if [[ "$ok" == "1" ]]; then
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record verification result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/live-status.txt
+          git commit -m "Record RSI Pages verification" || exit 0
+          git push origin HEAD:main
+
+      - name: Fail when the public site is unavailable
+        if: steps.probe.outputs.verified != 'true'
+        run: |
+          echo "GitHub Pages did not return the expected site during the polling window."
+          exit 1
